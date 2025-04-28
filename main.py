@@ -35,7 +35,7 @@ def main():
     parser.add_argument("-e", "--exclude", nargs="+", help="Exclude file patterns (e.g. 'tests/*' 'docs/*'). Defaults to test/build directories if not specified.")
     parser.add_argument("-s", "--max-size", type=int, default=100000, help="Maximum file size in bytes (default: 100000, about 100KB).")
     # Add language parameter for multi-language support
-    parser.add_argument("--language", default="english", help="Language for the generated tutorial (default: english)")
+    parser.add_argument("--language", default="russian", help="Language for the generated tutorial (default: russian)")
 
     args = parser.parse_args()
 

@@ -117,17 +117,27 @@ Codebase Context:
 {context}
 
 {language_instruction}Analyze the codebase context.
-Identify the top 5-10 core most important abstractions to help those new to the codebase.
+Identify minimum 10 of most important abstractions to help those new to the codebase.
+
+Use next priority list of abstractions, where 1 is maximum priority and 100 - minimum priority.
+1 endpoints and consumers
+2 celery tasks and tasks
+3 services and business logic
+4 models and crud's
+5 utils
+6 details of framework
+7 details of migration system
+8 any other abstractions
 
 For each abstraction, provide:
 1. A concise `name`{name_lang_hint}.
-2. A beginner-friendly `description` explaining what it is with a simple analogy, in around 100 words{desc_lang_hint}.
+2. A middle-developer-friendly `description` explaining what it is with analogy, in around 100 words{desc_lang_hint}.
 3. A list of relevant `file_indices` (integers) using the format `idx # path/comment`.
 
 List of file indices and paths present in the context:
 {file_listing_for_prompt}
 
-Format the output as a YAML list of dictionaries:
+Strict format the output as a YAML list of dictionaries:
 
 ```yaml
 - name: |
@@ -144,13 +154,14 @@ Format the output as a YAML list of dictionaries:
     Another core concept, similar to a blueprint for objects.{desc_lang_hint}
   file_indices:
     - 5 # path/to/another.js
-# ... up to 10 abstractions
+# ... up to 300 abstractions
 ```"""
         response = call_llm(prompt)
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
         abstractions = yaml.safe_load(yaml_str)
+        print(f"Total abstractions: {len(abstractions)}")
 
         if not isinstance(abstractions, list):
             raise ValueError("LLM Output is not a list")
@@ -175,7 +186,10 @@ Format the output as a YAML list of dictionaries:
                      elif isinstance(idx_entry, str) and '#' in idx_entry:
                           idx = int(idx_entry.split('#')[0].strip())
                      else:
-                          idx = int(str(idx_entry).strip())
+                          try:
+                               idx = int(str(idx_entry).strip())
+                          except:
+                               continue
 
                      if not (0 <= idx < file_count):
                          raise ValueError(f"Invalid file index {idx} found in item {item['name']}. Max index is {file_count - 1}.")
@@ -255,7 +269,7 @@ Context (Abstractions, Descriptions, Code):
 {context}
 
 {language_instruction}Please provide:
-1. A high-level `summary` of the project's main purpose and functionality in a few beginner-friendly sentences{lang_hint}. Use markdown formatting with **bold** and *italic* text to highlight important concepts.
+1. A high-level `summary` of the project's main purpose and functionality in a few middle-developer-friendly sentences{lang_hint}. Use markdown formatting with **bold** and *italic* text to highlight important concepts.
 2. A list (`relationships`) describing the key interactions between these abstractions. For each relationship, specify:
     - `from_abstraction`: Index of the source abstraction (e.g., `0 # AbstractionName1`)
     - `to_abstraction`: Index of the target abstraction (e.g., `1 # AbstractionName2`)
@@ -265,7 +279,7 @@ Context (Abstractions, Descriptions, Code):
 
 IMPORTANT: Make sure EVERY abstraction is involved in at least ONE relationship (either as source or target). Each abstraction index must appear at least once across all relationships.
 
-Format the output as YAML:
+Strict format the output as YAML:
 
 ```yaml
 summary: |
@@ -311,15 +325,16 @@ Now, provide the YAML output:
              try:
                  from_idx = int(str(rel["from_abstraction"]).split('#')[0].strip())
                  to_idx = int(str(rel["to_abstraction"]).split('#')[0].strip())
-                 if not (0 <= from_idx < num_abstractions and 0 <= to_idx < num_abstractions):
-                      raise ValueError(f"Invalid index in relationship: from={from_idx}, to={to_idx}. Max index is {num_abstractions-1}.")
-                 validated_relationships.append({
-                     "from": from_idx,
-                     "to": to_idx,
-                     "label": rel["label"] # Potentially translated label
-                 })
+                 if 0 <= from_idx < num_abstractions and 0 <= to_idx < num_abstractions:
+                     # raise ValueError(f"Invalid index in relationship: from={from_idx}, to={to_idx}. Max index is {num_abstractions-1}.")
+                     validated_relationships.append({
+                         "from": from_idx,
+                         "to": to_idx,
+                         "label": rel["label"] # Potentially translated label
+                     })
              except (ValueError, TypeError):
-                  raise ValueError(f"Could not parse indices from relationship: {rel}")
+                 breakpoint()
+                 raise ValueError(f"Could not parse indices from relationship: {rel}")
 
         print("Generated project summary and relationship details.")
         return {
@@ -354,10 +369,11 @@ class OrderChapters(Node):
         context = f"Project Summary{summary_note}:\n{relationships['summary']}\n\n"
         context += "Relationships (Indices refer to abstractions above):\n"
         for rel in relationships['details']:
-             from_name = abstractions[rel['from']]['name']
-             to_name = abstractions[rel['to']]['name']
-             # Use potentially translated 'label'
-             context += f"- From {rel['from']} ({from_name}) to {rel['to']} ({to_name}): {rel['label']}\n" # Label might be translated
+            if rel['from'] > len(abstractions) and rel['to'] > len(abstractions):
+                 from_name = abstractions[rel['from']]['name']
+                 to_name = abstractions[rel['to']]['name']
+                 # Use potentially translated 'label'
+                 context += f"- From {rel['from']} ({from_name}) to {rel['to']} ({to_name}): {rel['label']}\n" # Label might be translated
 
         list_lang_note = ""
         if language.lower() != "english":
@@ -381,6 +397,10 @@ Context about relationships and project summary:
 
 If you are going to make a tutorial for ```` {project_name} ````, what is the best order to explain these abstractions, from first to last?
 Ideally, first explain those that are the most important or foundational, perhaps user-facing concepts or entry points. Then move to more detailed, lower-level implementation details or supporting concepts.
+
+Important!
+Do not permitted duplicate of abstraction indices
+Do not permitted using of abstraction indices which not present in Context about relationships and project summary
 
 Output the ordered list of abstraction indices, including the name in a comment for clarity. Use the format `idx # AbstractionName`.
 
@@ -424,8 +444,8 @@ Now, provide the YAML output:
                  raise ValueError(f"Could not parse index from ordered list entry: {entry}")
 
         # Check if all abstractions are included
-        if len(ordered_indices) != num_abstractions:
-             raise ValueError(f"Ordered list length ({len(ordered_indices)}) does not match number of abstractions ({num_abstractions}). Missing indices: {set(range(num_abstractions)) - seen_indices}")
+        # if len(ordered_indices) != num_abstractions:
+             # raise ValueError(f"Ordered list length ({len(ordered_indices)}) does not match number of abstractions ({num_abstractions}). Missing indices: {set(range(num_abstractions)) - seen_indices}")
 
         print(f"Determined chapter order (indices): {ordered_indices}")
         return ordered_indices # Return the list of indices
@@ -521,7 +541,7 @@ class WriteChapters(BatchNode):
 
         # Get summary of chapters written *before* this one
         # Use the temporary instance variable
-        previous_chapters_summary = "\n---\n".join(self.chapters_written_so_far)
+        previous_chapters_summary = "\n---\n".join(self.chapters_written_so_far[-10:])
 
         # Add language instruction and context notes only if not English
         language_instruction = ""
@@ -547,7 +567,7 @@ class WriteChapters(BatchNode):
 
 
         prompt = f"""
-{language_instruction}Write a very beginner-friendly tutorial chapter (in Markdown format) for the project `{project_name}` about the concept: "{abstraction_name}". This is Chapter {chapter_num}.
+{language_instruction}Write a middle-developer-friendly tutorial chapter (in Markdown format) for the project `{project_name}` about the concept: "{abstraction_name}". This is Chapter {chapter_num}.
 
 Concept Details{concept_details_note}:
 - Name: {abstraction_name}
@@ -568,23 +588,61 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
 
 - If this is not the first chapter, begin with a brief transition from the previous chapter{instruction_lang_note}, referencing it with a proper Markdown link using its name{link_lang_note}.
 
-- Begin with a high-level motivation explaining what problem this abstraction solves{instruction_lang_note}. Start with a central use case as a concrete example. The whole chapter should guide the reader to understand how to solve this use case. Make it very minimal and friendly to beginners.
+- Begin with a high-level motivation explaining what problem this abstraction solves{instruction_lang_note}. Start with a central use case as a concrete example. The whole chapter should guide the reader to understand how to solve this use case. Make it very minimal and friendly to middle developers.
 
-- If the abstraction is complex, break it down into key concepts. Explain each concept one-by-one in a very beginner-friendly way{instruction_lang_note}.
+- If the abstraction is complex, break it down into key concepts. Explain each concept one-by-one in a middle-developer-friendly way{instruction_lang_note}.
 
 - Explain how to use this abstraction to solve the use case{instruction_lang_note}. Give example inputs and outputs for code snippets (if the output isn't values, describe at a high level what will happen{instruction_lang_note}).
 
-- Each code block should be BELOW 20 lines! If longer code blocks are needed, break them down into smaller pieces and walk through them one-by-one. Aggresively simplify the code to make it minimal. Use comments{code_comment_note} to skip non-important implementation details. Each code block should have a beginner friendly explanation right after it{instruction_lang_note}.
+- Each code block should be BELOW 20 lines! If longer code blocks are needed, break them down into smaller pieces and walk through them one-by-one. Aggresively simplify the code to make it minimal. Use comments{code_comment_note} to skip non-important implementation details. Each code block should have a middle developer friendly explanation right after it{instruction_lang_note}.
 
-- Describe the internal implementation to help understand what's under the hood{instruction_lang_note}. First provide a non-code or code-light walkthrough on what happens step-by-step when the abstraction is called{instruction_lang_note}. It's recommended to use a simple sequenceDiagram with a dummy example - keep it minimal with at most 5 participants to ensure clarity. If participant name has space, use: `participant QP as Query Processing`. {mermaid_lang_note}.
+- Describe the internal implementation to help understand what's under the hood{instruction_lang_note}. 
+  First provide a non-code or code-light walkthrough on what happens step-by-step when the abstraction is called{instruction_lang_note}. 
+  It's recommended to use a simple sequenceDiagram with a dummy example - keep it minimal with at most 5 participants to ensure clarity. 
+  If participant name has space, use: `participant QP as Query Processing`. {mermaid_lang_note}.
 
-- Then dive deeper into code for the internal implementation with references to files. Provide example code blocks, but make them similarly simple and beginner-friendly. Explain{instruction_lang_note}.
+- Then dive deeper into code for the internal implementation with references to files. Provide example code blocks, but make them similarly simple and middle-developer-friendly. Explain{instruction_lang_note}.
 
 - IMPORTANT: When you need to refer to other core abstractions covered in other chapters, ALWAYS use proper Markdown links like this: [Chapter Title](filename.md). Use the Complete Tutorial Structure above to find the correct filename and the chapter title{link_lang_note}. Translate the surrounding text.
 
-- Use mermaid diagrams to illustrate complex concepts (```mermaid``` format). {mermaid_lang_note}.
+- Use mermaid diagrams to illustrate complex concepts (```mermaid``` format). 
+  Mermaid Sequence Diagram Rules
+  1. Core
+     Use strict Mermaid syntax (no extra spaces/symbols).
+     Avoid recursion—unfold nested calls linearly.
+     Declare all participants early (explicitly or via participant).
+  2. Activation/Deactivation
+     Every activate X must have a matching deactivate X.
+     Keep activations flat (minimize nesting).
+     Deactivate before returns (-->).
+  3. Formatting
+     Use ASCII-only labels (avoid Unicode/special chars).
+     In Note: Plain text only (no markdown/emojis).
+     Line breaks: Use \\n or <br>.
+  4. Optimization
+     Max 3 nesting levels (for alt/loop/opt).
+     Max 10 participants per diagram.
+     Split complex flows into multiple diagrams.
+  5. Edge Cases
+     Replace recursion with explicit steps.
+     Use ->> for async calls, -> for sync.
+     Parallel flows: Use par blocks (Mermaid 8.4+). 
+  6. No Type Annotations  
+     Never include types (e.g., str, Callable). Mermaid doesn’t support them.
+  7. Simple Syntax Only
+     Do not use syntax for classDiagram
+     Fields: -private_field, +public_field
+     Methods: +method() (no args/return types)
+     No decorators like <<readonly>> or <<property>>
+  8. -- for Relationships Only
+     Use --|> for inheritance, --> for associations.
+     Never use -- inside a class definition.
+  9. Minimalist Design
+     Split complex classes into multiple diagrams.
+     Avoid Python-specific syntax (e.g., @property, type hints).
+  10. {mermaid_lang_note}.
 
-- Heavily use analogies and examples throughout{instruction_lang_note} to help beginners understand.
+- Heavily use analogies and examples throughout{instruction_lang_note} to help middle-developers understand.
 
 - End the chapter with a brief conclusion that summarizes what was learned{instruction_lang_note} and provides a transition to the next chapter{instruction_lang_note}. If there is a next chapter, use a proper Markdown link: [Next Chapter Title](next_chapter_filename){link_lang_note}.
 
@@ -592,7 +650,7 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
 
 - Output *only* the Markdown content for this chapter.
 
-Now, directly provide a super beginner-friendly Markdown output (DON'T need ```markdown``` tags):
+Now, directly provide a middle-developer-friendly Markdown output (DON'T need ```markdown``` tags):
 """
         chapter_content = call_llm(prompt)
         # Basic validation/cleanup
@@ -642,6 +700,7 @@ class CombineTutorial(Node):
             node_label = sanitized_name # Using sanitized name only
             mermaid_lines.append(f'    {node_id}["{node_label}"]') # Node label uses potentially translated name
         # Add edges for relationships using potentially translated labels
+        """ THIS CODE POTENTIAL BROKE DIAGRAMS."""
         for rel in relationships_data['details']:
             from_node_id = f"A{rel['from']}"
             to_node_id = f"A{rel['to']}"
@@ -682,18 +741,11 @@ class CombineTutorial(Node):
 
                 # Add attribution to chapter content (using English fixed string)
                 chapter_content = chapters_content[i] # Potentially translated content
-                if not chapter_content.endswith("\n\n"):
-                    chapter_content += "\n\n"
-                # Keep fixed strings in English
-                chapter_content += f"---\n\nGenerated by [AI Codebase Knowledge Builder](https://github.com/The-Pocket/Tutorial-Codebase-Knowledge)"
 
                 # Store filename and corresponding content
                 chapter_files.append({"filename": filename, "content": chapter_content})
             else:
                  print(f"Warning: Mismatch between chapter order, abstractions, or content at index {i} (abstraction index {abstraction_index}). Skipping file generation for this entry.")
-
-        # Add attribution to index content (using English fixed string)
-        index_content += f"\n\n---\n\nGenerated by [AI Codebase Knowledge Builder](https://github.com/The-Pocket/Tutorial-Codebase-Knowledge)"
 
         return {
             "output_path": output_path,
