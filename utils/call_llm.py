@@ -25,6 +25,7 @@ logger.addHandler(file_handler)
 # Simple cache configuration
 cache_file = "llm_cache.json"
 
+
 def get_string_checksum(string):
     h = hashlib.md5(string.encode())
     return h.hexdigest()
@@ -49,6 +50,7 @@ def find_in_cache(skip_cache, prompt_hash):
 
     return None
 
+
 def store_to_cache(skip_cache, prompt_hash, response_text):
     if not skip_cache and settings.IS_LLM_CACHE_ENABLED and response_text is not None:
         # Load cache again to avoid overwrites
@@ -67,6 +69,7 @@ def store_to_cache(skip_cache, prompt_hash, response_text):
                 json.dump(cache, f)
         except Exception as e:
             logger.error(f"Failed to save cache: {e}")
+
 
 # By default, we Google Gemini 2.5 pro, as it shows great performance for code understanding
 def call_llm(prompt: str, skip_cache: bool = False) -> str:
@@ -138,6 +141,7 @@ def call_llm(prompt: str, skip_cache: bool = False) -> str:
 #     )
 #     return r.choices[0].message.content
 
+
 if __name__ == "__main__":
     test_prompt = "Hello, how are you?"
 
@@ -145,4 +149,3 @@ if __name__ == "__main__":
     print("Making call...")
     response1 = call_llm(test_prompt, use_cache=False)
     print(f"Response: {response1}")
-
