@@ -19,12 +19,20 @@ This is a tutorial project of [Pocket Flow](https://github.com/The-Pocket/Pocket
 
 1. Clone this repository
 
-2. Install dependencies:
+2. Install python 3.10 venv inside project folder:
+   ```bash
+    pyenv install 3.10
+    pip install virtualenv
+    virtualenv --python="~/.pyenv/versions/3.10/bin/python3.10" venv
+    source venv/bin/activate
+   ```
+   
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-
-3. Copy example configuration for Google AI studio:
+   
+4. Copy example configuration for Google AI studio:
 
    ```bash
    cp .env_example .env
@@ -35,8 +43,7 @@ This is a tutorial project of [Pocket Flow](https://github.com/The-Pocket/Pocket
    - google project settings
    - ... and more
 
-
-4. Generate a complete codebase tutorial by running the main script:
+5. Generate a complete codebase tutorial by running the main script:
     ```bash
     # Analyze a GitHub repository
     python main.py --repo https://github.com/username/repo --include "*.py" "*.js" --exclude "tests/*" --max-size 50000
