@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     GOOGLE_AI_MODEL: str = "gemini-2.5-flash-preview-04-17"
 
     # IF you want to use your Google project - set also use_own_google_project to True and fill id and location
+    USE_OWN_GOOGLE_PROJECT: bool = False
     GEMINI_PROJECT_ID: str = ""
     GEMINI_LOCATION: str = ""
 
