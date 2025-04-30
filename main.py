@@ -3,6 +3,7 @@ import os
 import argparse
 # Import the function that creates the flow
 from flow import create_tutorial_flow
+from utils.settings import settings
 
 dotenv.load_dotenv()
 
@@ -34,6 +35,7 @@ def main():
     parser.add_argument("-i", "--include", nargs="+", help="Include file patterns (e.g. '*.py' '*.js'). Defaults to common code files if not specified.")
     parser.add_argument("-e", "--exclude", nargs="+", help="Exclude file patterns (e.g. 'tests/*' 'docs/*'). Defaults to test/build directories if not specified.")
     parser.add_argument("-s", "--max-size", type=int, default=100000, help="Maximum file size in bytes (default: 100000, about 100KB).")
+    parser.add_argument("-a", "--abstractions-count", type=int, default=10, help="Count of abstractions, which will be written (default: 10).")
     # Add language parameter for multi-language support
     parser.add_argument("--language", default="russian", help="Language for the generated tutorial (default: russian)")
 
@@ -70,6 +72,8 @@ def main():
         "chapters": [],
         "final_output_dir": None
     }
+
+    settings.ABSTRACTIONS_COUNT = args.abstractions_count
 
     # Display starting message with repository/directory and language
     print(f"Starting tutorial generation for: {args.repo or args.dir} in {args.language.capitalize()} language")

@@ -18,7 +18,7 @@ class OllaMa:
             result = client.generate(
                 model=model,
                 prompt=prompt,
-                options=dict(num_ctx=settings.OLLAMA_MAX_PROMPT)
+                options=dict(num_ctx=settings.OLLAMA_NUM_CTX)
             )
         except Exception as exc:
             print(exc)

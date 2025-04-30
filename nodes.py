@@ -4,6 +4,8 @@ from pocketflow import Node, BatchNode
 from utils.crawl_github_files import crawl_github_files
 from utils.call_llm import call_llm
 from utils.crawl_local_files import crawl_local_files
+from utils.settings import settings
+
 
 # Helper to get content for specific file indices
 def get_content_for_indices(files_data, indices):
@@ -104,11 +106,12 @@ class IdentifyAbstractions(Node):
         language_instruction = ""
         name_lang_hint = ""
         desc_lang_hint = ""
+        abstractions_count = settings.ABSTRACTIONS_COUNT
         if language.lower() != "english":
             language_instruction = f"IMPORTANT: Generate the `name` and `description` for each abstraction in **{language.capitalize()}** language. Do NOT use English for these fields.\n\n"
             # Keep specific hints here as name/description are primary targets
-            name_lang_hint = f" (value in {language.capitalize()})"
-            desc_lang_hint = f" (value in {language.capitalize()})"
+            name_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
+            desc_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
 
         prompt = f"""
 For the project `{project_name}`:
@@ -117,20 +120,20 @@ Codebase Context:
 {context}
 
 {language_instruction}Analyze the codebase context.
-Identify minimum 10 of most important abstractions to help those new to the codebase.
+Identify minimum {str(abstractions_count)} of most important of domain abstractions to help those new to the codebase.
 
 Use next priority list of abstractions, where 1 is maximum priority and 100 - minimum priority.
-1 endpoints and consumers
-2 celery tasks and tasks
-3 services and business logic
-4 models and crud's
-5 utils
-6 details of framework
-7 details of migration system
+1 endpoints and consumers if they presents in codebase
+2 celery tasks and tasks if they presents in codebase
+3 services and business logic if they presents in codebase
+4 models and crud's if they presents in codebase
+5 utils if they presents in codebase
+6 details of framework if they presents in codebase
+7 details of migration system if they presents in codebase
 8 any other abstractions
 
 For each abstraction, provide:
-1. A concise `name`{name_lang_hint}.
+1. A concise `name`.
 2. A middle-developer-friendly `description` explaining what it is with analogy, in around 100 words{desc_lang_hint}.
 3. A list of relevant `file_indices` (integers) using the format `idx # path/comment`.
 
@@ -138,7 +141,7 @@ List of file indices and paths present in the context:
 {file_listing_for_prompt}
 
 Strict format the output as a YAML list of dictionaries:
-
+Use this yaml structure as example
 ```yaml
 - name: |
     Query Processing{name_lang_hint}
@@ -154,9 +157,10 @@ Strict format the output as a YAML list of dictionaries:
     Another core concept, similar to a blueprint for objects.{desc_lang_hint}
   file_indices:
     - 5 # path/to/another.js
-# ... up to 300 abstractions
+# ... around to {str(abstractions_count)} abstractions
 ```"""
-        response = call_llm(prompt)
+        retry = True if self.cur_retry > 1 else False
+        response = call_llm(prompt=prompt, retry=retry)
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
@@ -297,7 +301,8 @@ relationships:
 
 Now, provide the YAML output:
 """
-        response = call_llm(prompt)
+        retry = True if self.cur_retry > 1 else False
+        response = call_llm(prompt=prompt, retry=retry)
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
@@ -400,7 +405,8 @@ Ideally, first explain those that are the most important or foundational, perhap
 
 Important!
 Do not permitted duplicate of abstraction indices
-Do not permitted using of abstraction indices which not present in Context about relationships and project summary
+Do not permitted one abstraction in ordered list more than once
+Do not permitted using of abstraction indices which not present in Abstractions list
 
 Output the ordered list of abstraction indices, including the name in a comment for clarity. Use the format `idx # AbstractionName`.
 
@@ -413,7 +419,8 @@ Output the ordered list of abstraction indices, including the name in a comment 
 
 Now, provide the YAML output:
 """
-        response = call_llm(prompt)
+        retry = True if self.cur_retry > 1 else False
+        response = call_llm(prompt=prompt, retry=retry)
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
@@ -541,7 +548,18 @@ class WriteChapters(BatchNode):
 
         # Get summary of chapters written *before* this one
         # Use the temporary instance variable
-        previous_chapters_summary = "\n---\n".join(self.chapters_written_so_far[-10:])
+        previous_chapters_summary = ""
+        count_of_created_chapters = len(self.chapters_written_so_far)
+
+        if settings.PREVIOUS_CHAPTERS_CONTEXT_ENABLED:
+            if settings.PREVIOUS_CHAPTERS_CONTEXT_LENGTH > count_of_created_chapters:
+                context_length = count_of_created_chapters
+            else:
+                context_length = settings.PREVIOUS_CHAPTERS_CONTEXT_LENGTH
+
+            context_start_from = context_length * -1
+
+            previous_chapters_summary = "\n---\n".join(self.chapters_written_so_far[context_start_from:])
 
         # Add language instruction and context notes only if not English
         language_instruction = ""
@@ -578,7 +596,8 @@ Complete Tutorial Structure{structure_note}:
 {item["full_chapter_listing"]}
 
 Context from previous chapters{prev_summary_note}:
-{previous_chapters_summary if previous_chapters_summary else "This is the first chapter."}
+{previous_chapters_summary if previous_chapters_summary and settings.PREVIOUS_CHAPTERS_CONTEXT_ENABLED else "This is the first chapter."}
+{"" if not settings.PREVIOUS_CHAPTERS_CONTEXT_ENABLED and count_of_created_chapters > 0 else "This is the first chapter."}
 
 Relevant Code Snippets (Code itself remains unchanged):
 {file_context_str if file_context_str else "No specific code snippets provided for this abstraction."}
@@ -586,7 +605,7 @@ Relevant Code Snippets (Code itself remains unchanged):
 Instructions for the chapter (Generate content in {language.capitalize()} unless specified otherwise):
 - Start with a clear heading (e.g., `# Chapter {chapter_num}: {abstraction_name}`). Use the provided concept name.
 
-- If this is not the first chapter, begin with a brief transition from the previous chapter{instruction_lang_note}, referencing it with a proper Markdown link using its name{link_lang_note}.
+- If this is not the first chapter and context from previous chapter is not empty, begin with a brief transition from the previous chapter{instruction_lang_note}, referencing it with a proper Markdown link using its name{link_lang_note}.
 
 - Begin with a high-level motivation explaining what problem this abstraction solves{instruction_lang_note}. Start with a central use case as a concrete example. The whole chapter should guide the reader to understand how to solve this use case. Make it very minimal and friendly to middle developers.
 
@@ -598,8 +617,7 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
 
 - Describe the internal implementation to help understand what's under the hood{instruction_lang_note}. 
   First provide a non-code or code-light walkthrough on what happens step-by-step when the abstraction is called{instruction_lang_note}. 
-  It's recommended to use a simple sequenceDiagram with a dummy example - keep it minimal with at most 5 participants to ensure clarity. 
-  If participant name has space, use: `participant QP as Query Processing`. {mermaid_lang_note}.
+  It's recommended to use a simple sequenceDiagram with a dummy example - keep it minimal with at most 5 participants to ensure clarity.  {mermaid_lang_note}.
 
 - Then dive deeper into code for the internal implementation with references to files. Provide example code blocks, but make them similarly simple and middle-developer-friendly. Explain{instruction_lang_note}.
 
@@ -652,7 +670,9 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
 
 Now, directly provide a middle-developer-friendly Markdown output (DON'T need ```markdown``` tags):
 """
-        chapter_content = call_llm(prompt)
+        retry = True if self.cur_retry > 1 else False
+        chapter_content = call_llm(prompt=prompt, retry=retry)
+
         # Basic validation/cleanup
         actual_heading = f"# Chapter {chapter_num}: {abstraction_name}" # Use potentially translated name
         if not chapter_content.strip().startswith(f"# Chapter {chapter_num}"):
@@ -700,7 +720,7 @@ class CombineTutorial(Node):
             node_label = sanitized_name # Using sanitized name only
             mermaid_lines.append(f'    {node_id}["{node_label}"]') # Node label uses potentially translated name
         # Add edges for relationships using potentially translated labels
-        """ THIS CODE POTENTIAL BROKE DIAGRAMS."""
+
         for rel in relationships_data['details']:
             from_node_id = f"A{rel['from']}"
             to_node_id = f"A{rel['to']}"

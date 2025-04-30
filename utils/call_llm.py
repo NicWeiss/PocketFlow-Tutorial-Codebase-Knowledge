@@ -1,6 +1,8 @@
 import hashlib
 
+from anthropic import Anthropic
 from google import genai
+from openai import OpenAI
 import os
 import logging
 import json
@@ -72,17 +74,22 @@ def store_to_cache(skip_cache, prompt_hash, response_text):
 
 
 # By default, we Google Gemini 2.5 pro, as it shows great performance for code understanding
-def call_llm(prompt: str, skip_cache: bool = False) -> str:
+def call_llm(prompt: str, skip_cache: bool = False, retry: bool = False) -> str:
     logger.info(f"PROMPT: {prompt}")
     prompt_hash = get_string_checksum(prompt)
 
-    if cached := find_in_cache(skip_cache, prompt_hash):
-        return cached
+    if retry:
+        print("  -- Last request failed. Try request to LLM without cache")
+
+    if not retry:
+        if cached := find_in_cache(skip_cache, prompt_hash):
+            return cached
 
     # Call the LLM if not in cache or cache disabled
     response_text = ""
+    print(f"  -- Prompt length: {len(prompt)}")
 
-    if settings.WITH_GOOGLE_AI:
+    if settings.AI_TYPE == "google":
         if settings.USE_OWN_GOOGLE_PROJECT:
             client = genai.Client(
                vertexai=True,
@@ -97,49 +104,49 @@ def call_llm(prompt: str, skip_cache: bool = False) -> str:
             contents=[prompt]
         )
         response_text = response.text
-    elif settings.WITH_OLLAMA_AI:
+    elif settings.AI_TYPE == "ollama":
         client = OllaMa(host=settings.OLLAMA_HOST)
         response = client.generate_content(prompt=prompt, model=settings.OLLAMA_MODEL)
         response_text = response.response
+    elif settings.AI_TYPE == "anthrophic":
+        client = Anthropic(api_key=settings.ANTHROPHIC_API_KEY)
+        response = client.messages.create(
+            model=settings.ANTHROPHIC_MODEL,
+            max_tokens=settings.ANTHROPHIC_MAX_TOKENS,
+            thinking={
+                "type": "enabled" if settings.ANTHROPHIC_IS_THINKING_ENABLED else "disabled",
+                "budget_tokens": settings.ANTHROPHIC_BUDGET_TOKENS
+            },
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        response_text = response.content[1].text
+    elif settings.AI_TYPE == "openai":
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model=settings.OPENAI_API_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={
+                "type": "text"
+            },
+            reasoning_effort="medium",
+            store=False
+        )
+        response_text = response.choices[0].message.content
 
-    store_to_cache(skip_cache, prompt_hash, response_text)
+    # Avoid thinking block in result
+    if "</think>" in response_text:
+        _, content_response = response_text.split("</think>", 1)
+    else:
+        content_response = response_text
+
+    store_to_cache(skip_cache, prompt_hash, content_response)
 
     # Log the response
-    logger.info(f"RESPONSE: {response_text}")
+    logger.info(f"RESPONSE: {content_response}")
 
-    return response_text
-
-# # Use Anthropic Claude 3.7 Sonnet Extended Thinking
-# def call_llm(prompt, use_cache: bool = True):
-#     from anthropic import Anthropic
-#     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", "your-api-key"))
-#     response = client.messages.create(
-#         model="claude-3-7-sonnet-20250219",
-#         max_tokens=21000,
-#         thinking={
-#             "type": "enabled",
-#             "budget_tokens": 20000
-#         },
-#         messages=[
-#             {"role": "user", "content": prompt}
-#         ]
-#     )
-#     return response.content[1].text
-
-# # Use OpenAI o1
-# def call_llm(prompt, use_cache: bool = True):
-#     from openai import OpenAI
-#     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "your-api-key"))
-#     r = client.chat.completions.create(
-#         model="o1",
-#         messages=[{"role": "user", "content": prompt}],
-#         response_format={
-#             "type": "text"
-#         },
-#         reasoning_effort="medium",
-#         store=False
-#     )
-#     return r.choices[0].message.content
+    return content_response
 
 
 if __name__ == "__main__":
