@@ -631,12 +631,16 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
      Declare all participants early (explicitly or via participant).
   2. Activation/Deactivation
      Every activate X must have a matching deactivate X.
-     Keep activations flat (minimize nesting).
+     Keep activations and deactivation flat in same level
      Deactivate before returns (-->).
+     Avoid deactivating inside alts or nesting
   3. Formatting
      Use ASCII-only labels (avoid Unicode/special chars).
      In Note: Plain text only (no markdown/emojis).
      Line breaks: Use \\n or <br>.
+     Instead symbol ' use this %%
+     Avoid special symbols in participants
+     Avoid any special characters in subgraph
   4. Optimization
      Max 3 nesting levels (for alt/loop/opt).
      Max 10 participants per diagram.
