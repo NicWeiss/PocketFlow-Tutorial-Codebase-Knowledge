@@ -109,13 +109,10 @@ class DetectLogicGroups(Node):
         # Add language instruction and hints only if not English
         language_instruction = ""
         name_lang_hint = ""
-        desc_lang_hint = ""
-        abstractions_count = settings.ABSTRACTIONS_COUNT
         if language.lower() != "english":
             language_instruction = f"IMPORTANT: Generate the `name` and `description` for each abstraction in **{language.capitalize()}** language. Do NOT use English for these fields.\n\n"
             # Keep specific hints here as name/description are primary targets
             name_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
-            desc_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
 
         prompt = f"""
 Codebase file path's Context:
@@ -217,21 +214,14 @@ class IdentifyAbstractions(Node):
         prompt = f"""
 For the project `{project_name}`:
 
+Quick description of this logic group:
+{logic_group_name}
+
 Codebase Context:
 {context}
 
 {language_instruction}Analyze the codebase context.
-Identify minimum {str(abstractions_count)} of most important of domain abstractions to help those new to the codebase.
-
-Use next priority list of abstractions, where 1 is maximum priority and 100 - minimum priority.
-1 endpoints and consumers if they presents in codebase
-2 celery tasks and tasks if they presents in codebase
-3 services and business logic if they presents in codebase
-4 models and crud's if they presents in codebase
-5 utils if they presents in codebase
-6 details of framework if they presents in codebase
-7 details of migration system if they presents in codebase
-8 any other abstractions
+Identify minimum {str(abstractions_count)} of most important of domain abstractions which relates to this logic group from quick description to  help those new to the codebase.
 
 For each abstraction, provide:
 1. A concise `name`.
@@ -736,6 +726,7 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
       - when two participants -  "participant_1->>participant_2: comment"
       - when only one participant -  "participant_1->>participant_1: comment"
      IN graph TD do not use brackets or any other special symbols
+     IN graph LR do not use slash or any other special symbols
   2. Activation/Deactivation
      DO NOT USE Activation and Deactivation
   3. Formatting
@@ -747,6 +738,7 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
      Avoid any special characters in subgraph
      Always set "%%" before "...", when you startt it on new line
      Always set comments for relation after symbol ":"
+     IN graph LR write comments by this pattern -  "participant_1 --> | comment text | participant_2" 
   4. Optimization
      Max 3 nesting levels (for alt/loop/opt).
      Max 10 participants per diagram.
@@ -882,6 +874,11 @@ class CombineTutorial(Node):
                 chapter_files.append({"filename": filename, "content": chapter_content})
             else:
                  print(f"Warning: Mismatch between chapter order, abstractions, or content at index {i} (abstraction index {abstraction_index}). Skipping file generation for this entry.")
+
+
+        # Keep fixed strings in English
+        index_content += f"## Used files\n\n"
+        index_content += "\n".join(shared["logic_groups"][logic_groups_current]["file_indices"])
 
         return {
             "output_path": output_path,
