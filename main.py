@@ -15,9 +15,9 @@ DEFAULT_INCLUDE_PATTERNS = {
 }
 
 DEFAULT_EXCLUDE_PATTERNS = {
-    "venv/*", ".venv/*", "*test*", "tests/*", "docs/*", "examples/*", "v1/*",
-    "dist/*", "build/*", "experimental/*", "deprecated/*",
-    "legacy/*", ".git/*", ".github/*", ".next/*", ".vscode/*", "obj/*", "bin/*", "node_modules/*", "*.log"
+    "venv/*", "*venv/*", "*test*", "tests/*", "docs/*", "examples/*", "v1/*", "node_modules*"
+    "dist/*", "build/*", "experimental/*", "deprecated/*", "*xsd*", "*vendor*", "*alembic*", "alembic*"
+    "legacy/*", ".git/*", ".github/*", ".next/*", ".vscode/*", "obj/*", "bin/*", "*node_modules*", "*.log", ".env"
 }
 
 # --- Main Function ---
@@ -33,7 +33,7 @@ def main():
     parser.add_argument("-t", "--token", help="GitHub personal access token (optional, reads from GITHUB_TOKEN env var if not provided).")
     parser.add_argument("-o", "--output", default="output", help="Base directory for output (default: ./output).")
     parser.add_argument("-i", "--include", nargs="+", help="Include file patterns (e.g. '*.py' '*.js'). Defaults to common code files if not specified.")
-    parser.add_argument("-e", "--exclude", nargs="+", help="Exclude file patterns (e.g. 'tests/*' 'docs/*'). Defaults to test/build directories if not specified.")
+    parser.add_argument("-e", "--exclude", nargs="+", help="Additional exclude file patterns (e.g. 'tests/*' 'docs/*'). Defaults to test/build directories if not specified.")
     parser.add_argument("-s", "--max-size", type=int, default=100000, help="Maximum file size in bytes (default: 100000, about 100KB).")
     parser.add_argument("-a", "--abstractions-count", type=int, default=10, help="Count of abstractions, which will be written (default: 10).")
     # Add language parameter for multi-language support
@@ -58,7 +58,7 @@ def main():
 
         # Add include/exclude patterns and max file size
         "include_patterns": set(args.include) if args.include else DEFAULT_INCLUDE_PATTERNS,
-        "exclude_patterns": set(args.exclude) if args.exclude else DEFAULT_EXCLUDE_PATTERNS,
+        "exclude_patterns": [*DEFAULT_EXCLUDE_PATTERNS, *list(set(args.exclude))] if args.exclude else DEFAULT_EXCLUDE_PATTERNS,
         "max_file_size": args.max_size,
 
         # Add language for multi-language support
@@ -70,7 +70,11 @@ def main():
         "relationships": {},
         "chapter_order": [],
         "chapters": [],
-        "final_output_dir": None
+        "final_output_dir": None,
+        "logic_groups_current": 0,
+        "is_done": False,
+        "is_crawling_skip": False,
+        "is_grouping_skip": False,
     }
 
     settings.ABSTRACTIONS_COUNT = args.abstractions_count
@@ -82,7 +86,11 @@ def main():
     tutorial_flow = create_tutorial_flow()
 
     # Run the flow
-    tutorial_flow.run(shared)
+    while shared["is_done"] is False:
+        tutorial_flow.run(shared)
+        shared["is_crawling_skip"] = True
+        shared["is_grouping_skip"] = True
+        shared["logic_groups_current"] = shared["logic_groups_current"] + 1
 
 if __name__ == "__main__":
     main()

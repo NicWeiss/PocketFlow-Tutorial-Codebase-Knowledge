@@ -103,6 +103,7 @@ def call_llm(prompt: str, skip_cache: bool = False, retry: bool = False) -> str:
             model=settings.GOOGLE_AI_MODEL,
             contents=[prompt]
         )
+
         response_text = response.text
     elif settings.AI_TYPE == "ollama":
         client = OllaMa(host=settings.OLLAMA_HOST)

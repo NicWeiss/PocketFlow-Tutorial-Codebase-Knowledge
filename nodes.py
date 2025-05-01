@@ -1,4 +1,6 @@
 import os
+from os.path import split
+
 import yaml
 from pocketflow import Node, BatchNode
 from utils.crawl_github_files import crawl_github_files
@@ -18,6 +20,9 @@ def get_content_for_indices(files_data, indices):
 
 class FetchRepo(Node):
     def prep(self, shared):
+        if shared["is_crawling_skip"]:
+            return {"is_crawling_skip": True}
+
         repo_url = shared.get("repo_url")
         local_dir = shared.get("local_dir")
         project_name = shared.get("project_name")
@@ -42,10 +47,14 @@ class FetchRepo(Node):
             "include_patterns": include_patterns,
             "exclude_patterns": exclude_patterns,
             "max_file_size": max_file_size,
-            "use_relative_paths": True
+            "use_relative_paths": True,
+            "is_crawling_skip": False
         }
 
     def exec(self, prep_res):
+        if prep_res["is_crawling_skip"]:
+            return
+
         if prep_res["repo_url"]:
             print(f"Crawling repository: {prep_res['repo_url']}...")
             result = crawl_github_files(
@@ -74,11 +83,102 @@ class FetchRepo(Node):
         return files_list
 
     def post(self, shared, prep_res, exec_res):
+        if shared["is_crawling_skip"]:
+            return
+
         shared["files"] = exec_res # List of (path, content) tuples
+
+
+class DetectLogicGroups(Node):
+    def prep(self, shared):
+        if shared["is_grouping_skip"]:
+            return None, None, True
+
+        language = shared.get("language", "english") # Get language
+        context = ", ".join([p for p,v in shared["files"]])
+
+        return context, language, False
+
+    def exec(self, prep_res):
+        context, language, is_grouping_skip = prep_res  # Unpack project name and language
+        if is_grouping_skip:
+            return
+
+        print(f"Identifying Logic groups using LLM...")
+
+        # Add language instruction and hints only if not English
+        language_instruction = ""
+        name_lang_hint = ""
+        desc_lang_hint = ""
+        abstractions_count = settings.ABSTRACTIONS_COUNT
+        if language.lower() != "english":
+            language_instruction = f"IMPORTANT: Generate the `name` and `description` for each abstraction in **{language.capitalize()}** language. Do NOT use English for these fields.\n\n"
+            # Keep specific hints here as name/description are primary targets
+            name_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
+            desc_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
+
+        prompt = f"""
+Codebase file path's Context:
+{context}
+
+Use context and group paths and files
+
+The main criterion is the common logical belonging of the path or file to a process or business feature
+
+Do not decompose too much down to a single file
+
+The optimal solution would be where paths from different path of the Codebase collected into a single logical group, since the files, based on the name and path, belong to a common process or business feature
+
+The optimal number of files in a group would be no more than 30
+
+For each logical group, provide:
+1. A concise `logic group name` corresponding to its purpose.
+2. A list of belonging `file_path` (string) using the format `file_path`.
+        
+Strict format the output as a YAML list of dictionaries:
+Use this yaml structure as example
+```yaml
+- name: |
+    First logic group name {name_lang_hint}
+  file_indices:
+    - path/to/file1.py
+    - path/to/related.py
+- name: |
+    Second logic group name {name_lang_hint}
+  file_indices:
+    - path/to/another.js
+# for all files from context
+```
+        """
+
+        retry = True if self.cur_retry > 1 else False
+        response = call_llm(prompt=prompt, retry=retry)
+
+        # --- Validation ---
+        yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
+        logic_groups = yaml.safe_load(yaml_str)
+        print(f"Total Logic groups: {len(logic_groups)}")
+
+        if not isinstance(logic_groups, list):
+            raise ValueError("LLM Output is not a list")
+
+        return logic_groups
+
+    def post(self, shared, prep_res, exec_res):
+        if shared["is_grouping_skip"]:
+            return
+
+        shared["logic_groups"] = exec_res
+        shared["logic_groups_total"] = len(exec_res)
+        shared["logic_groups_current"] = 0
 
 class IdentifyAbstractions(Node):
     def prep(self, shared):
-        files_data = shared["files"]
+        logic_groups_current = shared["logic_groups_current"]
+        logic_groups = shared["logic_groups"][logic_groups_current]
+        logic_groups_files = logic_groups["file_indices"]
+
+        files_data = [rec for rec in shared["files"] if rec[0] in logic_groups_files]
         project_name = shared["project_name"]  # Get project name
         language = shared.get("language", "english") # Get language
 
@@ -629,6 +729,7 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
      Use strict Mermaid syntax (no extra spaces/symbols).
      Avoid recursion—unfold nested calls linearly.
      Declare all participants early (explicitly or via participant).
+     Write any participant as one english word or som but connected witt underscore
   2. Activation/Deactivation
      Every activate X must have a matching deactivate X.
      Keep activations and deactivation flat in same level
@@ -702,6 +803,12 @@ Now, directly provide a middle-developer-friendly Markdown output (DON'T need ``
 
 class CombineTutorial(Node):
     def prep(self, shared):
+        logic_groups_current = shared["logic_groups_current"]
+        logic_group_name = shared["logic_groups"][logic_groups_current]["name"].replace('\n', '')
+
+        if (logic_groups_current + 1) == len(shared["logic_groups"]):
+            shared["is_done"] = True
+
         project_name = shared["project_name"]
         output_base_dir = shared.get("output_dir", "output") # Default output dir
         output_path = os.path.join(output_base_dir, project_name)
@@ -739,7 +846,7 @@ class CombineTutorial(Node):
         # --- End Mermaid ---
 
         # --- Prepare index.md content ---
-        index_content = f"# Tutorial: {project_name}\n\n"
+        index_content = f"# Tutorial: {project_name} [{logic_group_name}]\n\n"
         index_content += f"{relationships_data['summary']}\n\n" # Use the potentially translated summary directly
         # Keep fixed strings in English
         index_content += f"**Source Repository:** [{repo_url}]({repo_url})\n\n"
@@ -773,12 +880,14 @@ class CombineTutorial(Node):
 
         return {
             "output_path": output_path,
+            "logic_group_name": logic_group_name,
             "index_content": index_content,
             "chapter_files": chapter_files # List of {"filename": str, "content": str}
         }
 
     def exec(self, prep_res):
-        output_path = prep_res["output_path"]
+        logic_group_name = prep_res["logic_group_name"]
+        output_path = prep_res["output_path"] + "/" + logic_group_name
         index_content = prep_res["index_content"]
         chapter_files = prep_res["chapter_files"]
 
@@ -803,5 +912,7 @@ class CombineTutorial(Node):
 
 
     def post(self, shared, prep_res, exec_res):
-        shared["final_output_dir"] = exec_res # Store the output path
-        print(f"\nTutorial generation complete! Files are in: {exec_res}")
+        path = exec_res
+        logic_groups_current = shared["logic_groups_current"]
+        shared["final_output_dir"] = path # Store the output path
+        print(f"\nTutorial generation №{logic_groups_current} complete! Files are in: {path}")

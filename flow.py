@@ -6,7 +6,7 @@ from nodes import (
     AnalyzeRelationships,
     OrderChapters,
     WriteChapters,
-    CombineTutorial
+    CombineTutorial, DetectLogicGroups
 )
 
 def create_tutorial_flow():
@@ -14,6 +14,7 @@ def create_tutorial_flow():
 
     # Instantiate nodes
     fetch_repo = FetchRepo()
+    detect_logic_group = DetectLogicGroups(max_retries=5, wait=20)
     identify_abstractions = IdentifyAbstractions(max_retries=5, wait=20)
     analyze_relationships = AnalyzeRelationships(max_retries=5, wait=20)
     order_chapters = OrderChapters(max_retries=5, wait=20)
@@ -21,7 +22,8 @@ def create_tutorial_flow():
     combine_tutorial = CombineTutorial()
 
     # Connect nodes in sequence based on the design
-    fetch_repo >> identify_abstractions
+    fetch_repo >> detect_logic_group
+    detect_logic_group >> identify_abstractions
     identify_abstractions >> analyze_relationships
     analyze_relationships >> order_chapters
     order_chapters >> write_chapters
