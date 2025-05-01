@@ -79,15 +79,16 @@ def call_llm(prompt: str, skip_cache: bool = False, retry: bool = False) -> str:
     prompt_hash = get_string_checksum(prompt)
 
     if retry:
-        print("  -- Last request failed. Try request to LLM without cache")
+        print("  Last request failed. Try request to LLM without cache")
 
     if not retry:
         if cached := find_in_cache(skip_cache, prompt_hash):
+            print(f"  Found in cache")
             return cached
 
     # Call the LLM if not in cache or cache disabled
     response_text = ""
-    print(f"  -- Prompt length: {len(prompt)}")
+    # print(f"  Prompt length: {len(prompt)}")
 
     if settings.AI_TYPE == "google":
         if settings.USE_OWN_GOOGLE_PROJECT:

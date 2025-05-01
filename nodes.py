@@ -175,8 +175,9 @@ Use this yaml structure as example
 class IdentifyAbstractions(Node):
     def prep(self, shared):
         logic_groups_current = shared["logic_groups_current"]
-        logic_groups = shared["logic_groups"][logic_groups_current]
-        logic_groups_files = logic_groups["file_indices"]
+        logic_group = shared["logic_groups"][logic_groups_current]
+        logic_groups_files = logic_group["file_indices"]
+        logic_group_name = logic_group["name"].replace("\n", "")
 
         files_data = [rec for rec in shared["files"] if rec[0] in logic_groups_files]
         project_name = shared["project_name"]  # Get project name
@@ -196,11 +197,11 @@ class IdentifyAbstractions(Node):
         context, file_info = create_llm_context(files_data)
         # Format file info for the prompt (comment is just a hint for LLM)
         file_listing_for_prompt = "\n".join([f"- {idx} # {path}" for idx, path in file_info])
-        return context, file_listing_for_prompt, len(files_data), project_name, language # Return language
+        return context, file_listing_for_prompt, len(files_data), project_name, language, logic_group_name # Return language
 
     def exec(self, prep_res):
-        context, file_listing_for_prompt, file_count, project_name, language = prep_res  # Unpack project name and language
-        print(f"Identifying abstractions using LLM...")
+        context, file_listing_for_prompt, file_count, project_name, language, logic_group_name = prep_res  # Unpack project name and language
+        print(f"Identifying abstractions for logic group '{logic_group_name}' using LLM...")
 
         # Add language instruction and hints only if not English
         language_instruction = ""
@@ -729,12 +730,14 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
      Use strict Mermaid syntax (no extra spaces/symbols).
      Avoid recursion—unfold nested calls linearly.
      Declare all participants early (explicitly or via participant).
-     Write any participant as one english word or som but connected witt underscore
+     Write any participant as one or more english words connected witt underscore
+     Always create relations between participant. If participant only one then create relation on self
+     Example:
+      - when two participants -  "participant_1->>participant_2: comment"
+      - when only one participant -  "participant_1->>participant_1: comment"
+     IN graph TD do not use brackets or any other special symbols
   2. Activation/Deactivation
-     Every activate X must have a matching deactivate X.
-     Keep activations and deactivation flat in same level
-     Deactivate before returns (-->).
-     Avoid deactivating inside alts or nesting
+     DO NOT USE Activation and Deactivation
   3. Formatting
      Use ASCII-only labels (avoid Unicode/special chars).
      In Note: Plain text only (no markdown/emojis).
@@ -742,6 +745,8 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
      Instead symbol ' use this %%
      Avoid special symbols in participants
      Avoid any special characters in subgraph
+     Always set "%%" before "...", when you startt it on new line
+     Always set comments for relation after symbol ":"
   4. Optimization
      Max 3 nesting levels (for alt/loop/opt).
      Max 10 participants per diagram.
@@ -913,6 +918,6 @@ class CombineTutorial(Node):
 
     def post(self, shared, prep_res, exec_res):
         path = exec_res
-        logic_groups_current = shared["logic_groups_current"]
+        tutorial_number = shared["logic_groups_current"] + 1
         shared["final_output_dir"] = path # Store the output path
-        print(f"\nTutorial generation №{logic_groups_current} complete! Files are in: {path}")
+        print(f"\nTutorial generation №{tutorial_number} complete! Files are in: {path}")
