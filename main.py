@@ -86,6 +86,7 @@ def main():
     tutorial_flow = create_tutorial_flow()
 
     # Run the flow
+    print(f"Setup {settings.AI_TYPE} LLM")
     while shared["is_done"] is False:
         tutorial_flow.run(shared)
         shared["is_crawling_skip"] = True

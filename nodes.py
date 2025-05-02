@@ -92,25 +92,26 @@ class FetchRepo(Node):
 class DetectLogicGroups(Node):
     def prep(self, shared):
         if shared["is_grouping_skip"]:
-            return None, None, True
+            return None, None, None, True
 
         language = shared.get("language", "english") # Get language
-        context = ", ".join([p for p,v in shared["files"]])
+        files = [p for p,v in shared["files"]]
+        files_count = len(files)
+        context = ", ".join(files)
 
-        return context, language, False
+        return context, language, files_count, False
 
     def exec(self, prep_res):
-        context, language, is_grouping_skip = prep_res  # Unpack project name and language
+        context, language, files_count, is_grouping_skip = prep_res  # Unpack project name and language
         if is_grouping_skip:
             return
 
         print(f"Identifying Logic groups using LLM...")
 
-        # Add language instruction and hints only if not English
-        language_instruction = ""
+        # Define minimal count of logical groups based on count of files
+        target_group_count = (files_count / 10) / 2
         name_lang_hint = ""
         if language.lower() != "english":
-            language_instruction = f"IMPORTANT: Generate the `name` and `description` for each abstraction in **{language.capitalize()}** language. Do NOT use English for these fields.\n\n"
             # Keep specific hints here as name/description are primary targets
             name_lang_hint = f" IMPORTANT: Generate this on {language.capitalize()} language"
 
@@ -118,15 +119,22 @@ class DetectLogicGroups(Node):
 Codebase file path's Context:
 {context}
 
-Use context and group paths and files
-
+Context - list of paths to files separated by coma
+Use context and group paths
 The main criterion is the common logical belonging of the path or file to a process or business feature
 
 Do not decompose too much down to a single file
-
 The optimal solution would be where paths from different path of the Codebase collected into a single logical group, since the files, based on the name and path, belong to a common process or business feature
+If the groups are close in meaning - combine files under one group
+The optimal number of files in one group would be no more than 30
+If files for one group more than 30 - do not skip files - just decompose group
+Do not use patterns like *.py , save original paths to files from the context
+Avoid duplicating groups
+If file belongs to multiple groups - add this file to each group
 
-The optimal number of files in a group would be no more than 30
+IMPORTANT! Identify minimum {str(int(target_group_count))} of logic groups
+IMPORTANT! Use all files paths from context, because need to explain about all files
+IMPORTANT! Result must contain paths not less than in context
 
 For each logical group, provide:
 1. A concise `logic group name` corresponding to its purpose.
@@ -223,8 +231,10 @@ Codebase Context:
 {language_instruction}Analyze the codebase context.
 Identify minimum {str(abstractions_count)} of most important of domain abstractions which relates to this logic group from quick description to  help those new to the codebase.
 
+Keep abstraction name is short - maximum 5 words
+
 For each abstraction, provide:
-1. A concise `name`.
+1. A concise abstraction `name`.
 2. A middle-developer-friendly `description` explaining what it is with analogy, in around 100 words{desc_lang_hint}.
 3. A list of relevant `file_indices` (integers) using the format `idx # path/comment`.
 
@@ -864,6 +874,10 @@ class CombineTutorial(Node):
                 abstraction_name = abstractions[abstraction_index]["name"] # Potentially translated name
                 # Sanitize potentially translated name for filename
                 safe_name = "".join(c if c.isalnum() else '_' for c in abstraction_name).lower()
+
+                if len(safe_name) > 100:
+                    safe_name = safe_name[:100] + "..."
+
                 filename = f"{i+1:02d}_{safe_name}.md"
                 index_content += f"{i+1}. [{abstraction_name}]({filename})\n" # Use potentially translated name in link text
 
